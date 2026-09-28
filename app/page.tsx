@@ -94,7 +94,7 @@ function MapView({
       pitch: 58,
       bearing: -12,
       maxPitch: 70,
-      attributionControl: true,
+      attributionControl: {},
     });
     mapRef.current = map;
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
