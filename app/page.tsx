@@ -2,7 +2,8 @@
 
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import maplibregl, { Map as MapLibreMap, Marker } from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
+import type { Map as MapLibreMap, Marker } from 'maplibre-gl';
 
 type Location = { name: string; type: string; center: [number, number] };
 
