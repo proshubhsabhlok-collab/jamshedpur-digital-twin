@@ -1,7 +1,7 @@
 'use client';
 
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import maplibregl, { Map as MapLibreMap, Marker } from 'maplibre-gl';
 
 type Location = { name: string; type: string; center: [number, number] };
@@ -196,6 +196,13 @@ function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    const loc = locations.find((x) => x.name === selected);
+    if (loc) map.flyTo({ center: loc.center, zoom: 15.2, pitch: 62, duration: 1100 });
+  }, [selected]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
     const setVisibility = (pattern: RegExp, visible: boolean) => {
       (map.getStyle().layers || []).forEach((layer) => {
         if (pattern.test(layer.id)) {
@@ -248,7 +255,7 @@ export default function Home() {
   const floodRisk = Math.round(Math.min(100, rainfall * 1.25));
   const health = Math.round(Math.max(0, 100 - aqi * 0.25 - congestion * 0.18 - floodRisk * 0.12));
 
-  const selectLocation = (loc: Location) => setSelected(loc.name);
+  const selectLocation = useCallback((loc: Location) => setSelected(loc.name), []);
   const toggle = (key: keyof typeof layers) => setLayers((x) => ({ ...x, [key]: !x[key] }));
 
   const layerRows: [keyof typeof layers, string][] = [
