@@ -100,7 +100,7 @@ function MapView({
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
 
     map.on('load', () => {
-      const styleLayers = map.getStyle().layers || [];
+      const styleLayers = map.getStyle()?.layers ?? [];
       const has3DBuildings = styleLayers.some((l) => l.type === 'fill-extrusion' && /building/i.test(l.id));
       if (!has3DBuildings) {
         try {
