@@ -28,16 +28,8 @@ function makeCarElement(scale = 1) {
   el.innerHTML = `
     <svg width="46" height="28" viewBox="0 0 46 28" aria-hidden="true">
       <defs>
-        <linearGradient id="carPaint" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stop-color="#e9f2fb"/>
-          <stop offset=".42" stop-color="#4d667c"/>
-          <stop offset="1" stop-color="#182633"/>
-        </linearGradient>
-        <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stop-color="#c9eaff"/>
-          <stop offset=".5" stop-color="#29465c"/>
-          <stop offset="1" stop-color="#0b1721"/>
-        </linearGradient>
+        <linearGradient id="carPaint" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e9f2fb"/><stop offset=".42" stop-color="#4d667c"/><stop offset="1" stop-color="#182633"/></linearGradient>
+        <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c9eaff"/><stop offset=".5" stop-color="#29465c"/><stop offset="1" stop-color="#0b1721"/></linearGradient>
       </defs>
       <ellipse cx="23" cy="25" rx="18" ry="2.5" fill="rgba(0,0,0,.45)"/>
       <path d="M7 19 L10 10 Q11 7 15 6 L29 6 Q33 7 36 11 L40 13 Q42 14 42 19 L40 22 L8 22 Z" fill="url(#carPaint)" stroke="#081018" stroke-width="1.3"/>
@@ -47,8 +39,7 @@ function makeCarElement(scale = 1) {
       <path d="M8.5 17.5 L20 17.5 M22 17.5 L34 17.5" stroke="#17232d" stroke-width=".8"/>
       <circle cx="12" cy="22" r="4" fill="#10151a" stroke="#71818c" stroke-width="1"/><circle cx="34" cy="22" r="4" fill="#10151a" stroke="#71818c" stroke-width="1"/>
       <circle cx="12" cy="22" r="1.4" fill="#d8e0e5"/><circle cx="34" cy="22" r="1.4" fill="#d8e0e5"/>
-      <rect x="38.5" y="14.5" width="3" height="2" rx="1" fill="#fff3bd"/>
-      <rect x="5.5" y="15" width="2.5" height="2" rx="1" fill="#ff5347"/>
+      <rect x="38.5" y="14.5" width="3" height="2" rx="1" fill="#fff3bd"/><rect x="5.5" y="15" width="2.5" height="2" rx="1" fill="#ff5347"/>
     </svg>`;
   return el;
 }
@@ -63,19 +54,9 @@ function interpolate(route: [number, number][], t: number) {
   return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f] as [number, number];
 }
 
-function MapView({
-  traffic,
-  emissions,
-  rainfall,
-  time,
-  layers,
-  selected,
-  onSelect,
-}: {
+function MapView({ traffic, emissions, rainfall, time, layers, selected, onSelect }: {
   traffic: number; emissions: number; rainfall: number; time: number;
-  layers: Record<string, boolean>;
-  selected: string;
-  onSelect: (location: Location) => void;
+  layers: Record<string, boolean>; selected: string; onSelect: (location: Location) => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -96,14 +77,35 @@ function MapView({
       bearing: -12,
       maxPitch: 70,
       attributionControl: {},
+      renderWorldCopies: false,
     });
     mapRef.current = map;
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
 
+    const resizeMap = () => {
+      try { map.resize(); } catch {}
+    };
+    const observer = new ResizeObserver(resizeMap);
+    observer.observe(container.current);
+
+    map.on('error', (event) => {
+      console.warn('MapLibre map error:', event?.error);
+    });
+
     map.on('load', () => {
-      const styleLayers = map.getStyle()?.layers ?? [];
+      // The grid/flex layout can settle one frame after MapLibre creates its canvas.
+      // Resize explicitly so the canvas always fills the center column.
+      requestAnimationFrame(() => {
+        resizeMap();
+        setTimeout(resizeMap, 250);
+      });
+
+      const style = map.getStyle();
+      const styleLayers = style?.layers ?? [];
       const has3DBuildings = styleLayers.some((l) => l.type === 'fill-extrusion' && /building/i.test(l.id));
-      if (!has3DBuildings) {
+      const hasOpenMapTiles = !!style?.sources?.openmaptiles;
+
+      if (!has3DBuildings && hasOpenMapTiles) {
         try {
           map.addLayer({
             id: 'jamshedpur-3d-buildings',
@@ -118,42 +120,45 @@ function MapView({
               'fill-extrusion-opacity': 0.88,
             },
           });
-        } catch {}
+        } catch (error) {
+          console.warn('3D building layer could not be added:', error);
+        }
       }
 
-      map.addSource('pollution', {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [
-          { type: 'Feature', properties: { intensity: 0.9 }, geometry: { type: 'Point', coordinates: [86.1950, 22.8000] } },
-          { type: 'Feature', properties: { intensity: 0.65 }, geometry: { type: 'Point', coordinates: [86.2020, 22.8040] } },
-        ]},
-      });
-      map.addLayer({
-        id: 'simulation-pollution',
-        type: 'circle',
-        source: 'pollution',
-        paint: {
-          'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 16, 14, 42, 17, 85],
-          'circle-color': '#ef5350',
-          'circle-opacity': 0.16,
-          'circle-stroke-color': '#ff8a80',
-          'circle-stroke-opacity': 0.45,
-          'circle-stroke-width': 1,
-        },
-      });
+      if (!map.getSource('pollution')) {
+        map.addSource('pollution', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [
+            { type: 'Feature', properties: { intensity: 0.9 }, geometry: { type: 'Point', coordinates: [86.1950, 22.8000] } },
+            { type: 'Feature', properties: { intensity: 0.65 }, geometry: { type: 'Point', coordinates: [86.2020, 22.8040] } },
+          ]},
+        });
+      }
+      if (!map.getLayer('simulation-pollution')) {
+        map.addLayer({
+          id: 'simulation-pollution', type: 'circle', source: 'pollution',
+          paint: {
+            'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 16, 14, 42, 17, 85],
+            'circle-color': '#ef5350', 'circle-opacity': 0.16,
+            'circle-stroke-color': '#ff8a80', 'circle-stroke-opacity': 0.45, 'circle-stroke-width': 1,
+          },
+        });
+      }
 
-      map.addSource('flood', {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [
-          { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[[86.201,22.810],[86.209,22.810],[86.211,22.816],[86.204,22.819],[86.199,22.815],[86.201,22.810]]] } },
-        ]},
-      });
-      map.addLayer({
-        id: 'simulation-flood',
-        type: 'fill',
-        source: 'flood',
-        paint: { 'fill-color': '#38a8ff', 'fill-opacity': 0.18, 'fill-outline-color': '#70c8ff' },
-      });
+      if (!map.getSource('flood')) {
+        map.addSource('flood', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [
+            { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[[86.201,22.810],[86.209,22.810],[86.211,22.816],[86.204,22.819],[86.199,22.815],[86.201,22.810]]] } },
+          ]},
+        });
+      }
+      if (!map.getLayer('simulation-flood')) {
+        map.addLayer({
+          id: 'simulation-flood', type: 'fill', source: 'flood',
+          paint: { 'fill-color': '#38a8ff', 'fill-opacity': 0.18, 'fill-outline-color': '#70c8ff' },
+        });
+      }
 
       locations.forEach((loc) => {
         const marker = new maplibregl.Marker({ color: '#d7e9f7' })
@@ -166,10 +171,8 @@ function MapView({
       const carCount = 14;
       const markers = Array.from({ length: carCount }, (_, i) => {
         const el = makeCarElement(i % 3 === 0 ? 1 : 0.82);
-        const marker = new maplibregl.Marker({ element: el, anchor: 'center', rotationAlignment: 'map' })
-          .setLngLat(vehicleRoutes[i % vehicleRoutes.length][0])
-          .addTo(map);
-        return marker;
+        return new maplibregl.Marker({ element: el, anchor: 'center', rotationAlignment: 'map' })
+          .setLngLat(vehicleRoutes[i % vehicleRoutes.length][0]).addTo(map);
       });
       markersRef.current = markers;
 
@@ -187,6 +190,7 @@ function MapView({
     });
 
     return () => {
+      observer.disconnect();
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
       markersRef.current.forEach((m) => m.remove());
       map.remove();
@@ -205,7 +209,7 @@ function MapView({
     const map = mapRef.current;
     if (!map || !map.isStyleLoaded()) return;
     const setVisibility = (pattern: RegExp, visible: boolean) => {
-      (map.getStyle()?.layers || []).forEach((layer) => {
+      (map.getStyle()?.layers ?? []).forEach((layer) => {
         if (pattern.test(layer.id)) {
           try { map.setLayoutProperty(layer.id, 'visibility', visible ? 'visible' : 'none'); } catch {}
         }
@@ -217,12 +221,11 @@ function MapView({
     if (p) map.setLayoutProperty('simulation-pollution', 'visibility', layers.pollution ? 'visible' : 'none');
     const f = map.getLayer('simulation-flood');
     if (f) map.setLayoutProperty('simulation-flood', 'visibility', layers.flood ? 'visible' : 'none');
-    markersRef.current.forEach((m) => {
-      m.getElement().style.display = layers.vehicles ? 'block' : 'none';
-    });
+    markersRef.current.forEach((m) => { m.getElement().style.display = layers.vehicles ? 'block' : 'none'; });
     const brightness = time >= 18 || time < 6 ? 0.66 : time < 8 || time >= 16 ? 0.84 : 1;
     const el = map.getContainer();
     el.style.filter = `brightness(${brightness}) saturate(${time >= 18 || time < 6 ? 0.72 : 1})`;
+    requestAnimationFrame(() => { try { map.resize(); } catch {} });
   }, [layers, time]);
 
   useEffect(() => {
@@ -270,14 +273,11 @@ export default function Home() {
         <div><div className="eyebrow">SMART CITY DIGITAL TWIN · OPENSTREETMAP</div><h1>JAMSHEDPUR</h1></div>
         <div className="time-badge">{String(Math.floor(time)).padStart(2, '0')}:00 <span>IST</span></div>
       </header>
-
       <section className="workspace">
         <aside className="panel left-panel">
           <div className="panel-title">CITY LAYERS</div>
           {layerRows.map(([key, label]) => (
-            <button className="switch-row" key={key} onClick={() => toggle(key)}>
-              <span>{label}</span><i className={layers[key] ? 'switch on' : 'switch'}><b /></i>
-            </button>
+            <button className="switch-row" key={key} onClick={() => toggle(key)}><span>{label}</span><i className={layers[key] ? 'switch on' : 'switch'}><b /></i></button>
           ))}
           <div className="divider" />
           <div className="panel-title">SIMULATION</div>
@@ -289,17 +289,13 @@ export default function Home() {
           <input type="range" min="0" max="100" value={rainfall} onChange={(e) => setRainfall(+e.target.value)} />
           <label>Time of Day <b>{String(time).padStart(2,'0')}:00</b></label>
           <input type="range" min="0" max="23" value={time} onChange={(e) => setTime(+e.target.value)} />
-          <div className="time-presets">
-            {[7, 12, 18, 22].map((t) => <button key={t} onClick={() => setTime(t)}>{t === 7 ? 'Morning' : t === 12 ? 'Noon' : t === 18 ? 'Evening' : 'Night'}</button>)}
-          </div>
+          <div className="time-presets">{[7, 12, 18, 22].map((t) => <button key={t} onClick={() => setTime(t)}>{t === 7 ? 'Morning' : t === 12 ? 'Noon' : t === 18 ? 'Evening' : 'Night'}</button>)}</div>
         </aside>
-
         <div className="city-view">
           <MapView traffic={traffic} emissions={emissions} rainfall={rainfall} time={time} layers={layers} selected={selected} onSelect={selectLocation} />
           <div className="selected-card"><span>SELECTED LOCATION</span><strong>{selected}</strong><small>{selectedLocation?.type ?? 'Interactive city map'}</small></div>
           <div className="map-hint">Drag to orbit · Scroll to zoom · Click a location · Toggle live layers</div>
         </div>
-
         <aside className="panel right-panel">
           <div className="panel-title">CITY STATUS</div>
           <div className="health-card"><span>CITY HEALTH INDEX</span><strong>{health}</strong><small>SIMULATED · LIVE CONTROLS</small></div>
@@ -309,9 +305,7 @@ export default function Home() {
           <div className="divider" />
           <div className="panel-title">LOCATIONS</div>
           {locations.map((location) => (
-            <button className={selected === location.name ? 'location-btn active' : 'location-btn'} key={location.name} onClick={() => setSelected(location.name)}>
-              <span>●</span><div><b>{location.name}</b><small>{location.type}</small></div>
-            </button>
+            <button className={selected === location.name ? 'location-btn active' : 'location-btn'} key={location.name} onClick={() => setSelected(location.name)}><span>●</span><div><b>{location.name}</b><small>{location.type}</small></div></button>
           ))}
         </aside>
       </section>
