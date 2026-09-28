@@ -1,117 +1,237 @@
 'use client';
 
-import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, PerspectiveCamera } from '@react-three/drei';
-import { useMemo, useRef, useState } from 'react';
-import * as THREE from 'three';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import maplibregl, { Map as MapLibreMap, Marker } from 'maplibre-gl';
 
-const locations = [
-  { name: 'Tata Steel', type: 'Industrial Zone', x: -3.4, z: -1.2 },
-  { name: 'Bistupur', type: 'Commercial Zone', x: 0.8, z: -0.2 },
-  { name: 'Sakchi', type: 'High Traffic Zone', x: 2.8, z: 1.4 },
-  { name: 'Jubilee Park', type: 'Green Zone', x: -0.4, z: 2.8 },
-  { name: 'Mango', type: 'Residential / Traffic Zone', x: 3.6, z: -2.5 },
+type Location = { name: string; type: string; center: [number, number] };
+
+const locations: Location[] = [
+  { name: 'Tata Steel', type: 'Industrial Zone', center: [86.1950, 22.8000] },
+  { name: 'Bistupur', type: 'Commercial Zone', center: [86.1880, 22.7980] },
+  { name: 'Sakchi', type: 'High Traffic Zone', center: [86.2020, 22.8040] },
+  { name: 'Jubilee Park', type: 'Green Zone', center: [86.1928, 22.8072] },
+  { name: 'Mango', type: 'Residential / Traffic Zone', center: [86.2080, 22.8210] },
 ];
 
-function Building({ position, height, width = 0.5 }: { position: [number, number, number]; height: number; width?: number }) {
-  return (
-    <mesh position={[position[0], height / 2, position[2]]} castShadow>
-      <boxGeometry args={[width, height, width]} />
-      <meshStandardMaterial color="#8794a5" roughness={0.72} />
-    </mesh>
-  );
+const vehicleRoutes = [
+  [[86.1830, 22.7930], [86.1900, 22.7970], [86.1980, 22.8020], [86.2050, 22.8070], [86.2130, 22.8130]],
+  [[86.1810, 22.8040], [86.1900, 22.8040], [86.2010, 22.8040], [86.2110, 22.8050], [86.2180, 22.8050]],
+  [[86.1950, 22.8150], [86.1990, 22.8080], [86.2020, 22.8010], [86.2050, 22.7940]],
+] as [number, number][][];
+
+function makeCarElement(scale = 1) {
+  const el = document.createElement('div');
+  el.className = 'car-marker';
+  el.style.transform = `scale(${scale})`;
+  el.innerHTML = `
+    <svg width="46" height="28" viewBox="0 0 46 28" aria-hidden="true">
+      <defs>
+        <linearGradient id="carPaint" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#e9f2fb"/>
+          <stop offset=".42" stop-color="#4d667c"/>
+          <stop offset="1" stop-color="#182633"/>
+        </linearGradient>
+        <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#c9eaff"/>
+          <stop offset=".5" stop-color="#29465c"/>
+          <stop offset="1" stop-color="#0b1721"/>
+        </linearGradient>
+      </defs>
+      <ellipse cx="23" cy="25" rx="18" ry="2.5" fill="rgba(0,0,0,.45)"/>
+      <path d="M7 19 L10 10 Q11 7 15 6 L29 6 Q33 7 36 11 L40 13 Q42 14 42 19 L40 22 L8 22 Z" fill="url(#carPaint)" stroke="#081018" stroke-width="1.3"/>
+      <path d="M15 7.5 L20.5 7.5 L20.5 13.2 L12.2 13.2 L13.7 9 Q14 8 15 7.5Z" fill="url(#glass)" stroke="#91b5cc" stroke-width=".6"/>
+      <path d="M22 7.5 L28.5 7.5 Q31 8 33 10.2 L35.3 13.2 L22 13.2Z" fill="url(#glass)" stroke="#91b5cc" stroke-width=".6"/>
+      <path d="M21.5 7.5 L21.5 21" stroke="#111d27" stroke-width="1"/>
+      <path d="M8.5 17.5 L20 17.5 M22 17.5 L34 17.5" stroke="#17232d" stroke-width=".8"/>
+      <circle cx="12" cy="22" r="4" fill="#10151a" stroke="#71818c" stroke-width="1"/><circle cx="34" cy="22" r="4" fill="#10151a" stroke="#71818c" stroke-width="1"/>
+      <circle cx="12" cy="22" r="1.4" fill="#d8e0e5"/><circle cx="34" cy="22" r="1.4" fill="#d8e0e5"/>
+      <rect x="38.5" y="14.5" width="3" height="2" rx="1" fill="#fff3bd"/>
+      <rect x="5.5" y="15" width="2.5" height="2" rx="1" fill="#ff5347"/>
+    </svg>`;
+  return el;
 }
 
-function Road({ position, rotation = 0, length = 10 }: { position: [number, number, number]; rotation?: number; length?: number }) {
-  return (
-    <mesh position={position} rotation={[-Math.PI / 2, 0, rotation]} receiveShadow>
-      <planeGeometry args={[2.1, length]} />
-      <meshStandardMaterial color="#242a33" roughness={0.9} />
-    </mesh>
-  );
+function interpolate(route: [number, number][], t: number) {
+  const n = route.length - 1;
+  const p = Math.min(n - 0.0001, t * n);
+  const i = Math.floor(p);
+  const f = p - i;
+  const a = route[i];
+  const b = route[i + 1];
+  return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f] as [number, number];
 }
 
-function Vehicle({ x, z, speed, vertical = false }: { x: number; z: number; speed: number; vertical?: boolean }) {
-  const ref = useRef<THREE.Mesh>(null);
-  useFrame((_, delta) => {
-    if (!ref.current) return;
-    if (vertical) {
-      ref.current.position.z += speed * delta;
-      if (ref.current.position.z > 5.5) ref.current.position.z = -5.5;
-    } else {
-      ref.current.position.x += speed * delta;
-      if (ref.current.position.x > 5.5) ref.current.position.x = -5.5;
+function MapView({
+  traffic,
+  emissions,
+  rainfall,
+  time,
+  layers,
+  selected,
+  onSelect,
+}: {
+  traffic: number; emissions: number; rainfall: number; time: number;
+  layers: Record<string, boolean>;
+  selected: string;
+  onSelect: (location: Location) => void;
+}) {
+  const container = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<MapLibreMap | null>(null);
+  const markersRef = useRef<Marker[]>([]);
+  const animationRef = useRef<number | null>(null);
+  const values = useRef({ traffic, emissions, rainfall, time, layers });
+  values.current = { traffic, emissions, rainfall, time, layers };
+
+  useEffect(() => {
+    if (!container.current || mapRef.current) return;
+
+    const map = new maplibregl.Map({
+      container: container.current,
+      style: 'https://tiles.openfreemap.org/styles/liberty',
+      center: [86.2029, 22.8046],
+      zoom: 13.7,
+      pitch: 58,
+      bearing: -12,
+      maxPitch: 70,
+      attributionControl: true,
+    });
+    mapRef.current = map;
+    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+
+    map.on('load', () => {
+      const styleLayers = map.getStyle().layers || [];
+      const has3DBuildings = styleLayers.some((l) => l.type === 'fill-extrusion' && /building/i.test(l.id));
+      if (!has3DBuildings) {
+        try {
+          map.addLayer({
+            id: 'jamshedpur-3d-buildings',
+            type: 'fill-extrusion',
+            source: 'openmaptiles',
+            'source-layer': 'building',
+            minzoom: 14,
+            paint: {
+              'fill-extrusion-color': '#667586',
+              'fill-extrusion-height': ['coalesce', ['get', 'render_height'], ['get', 'height'], 9],
+              'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+              'fill-extrusion-opacity': 0.88,
+            },
+          });
+        } catch {}
+      }
+
+      map.addSource('pollution', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [
+          { type: 'Feature', properties: { intensity: 0.9 }, geometry: { type: 'Point', coordinates: [86.1950, 22.8000] } },
+          { type: 'Feature', properties: { intensity: 0.65 }, geometry: { type: 'Point', coordinates: [86.2020, 22.8040] } },
+        ]},
+      });
+      map.addLayer({
+        id: 'simulation-pollution',
+        type: 'circle',
+        source: 'pollution',
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 16, 14, 42, 17, 85],
+          'circle-color': '#ef5350',
+          'circle-opacity': 0.16,
+          'circle-stroke-color': '#ff8a80',
+          'circle-stroke-opacity': 0.45,
+          'circle-stroke-width': 1,
+        },
+      });
+
+      map.addSource('flood', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [
+          { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[[86.201,22.810],[86.209,22.810],[86.211,22.816],[86.204,22.819],[86.199,22.815],[86.201,22.810]]] } },
+        ]},
+      });
+      map.addLayer({
+        id: 'simulation-flood',
+        type: 'fill',
+        source: 'flood',
+        paint: { 'fill-color': '#38a8ff', 'fill-opacity': 0.18, 'fill-outline-color': '#70c8ff' },
+      });
+
+      locations.forEach((loc) => {
+        const marker = new maplibregl.Marker({ color: '#d7e9f7' })
+          .setLngLat(loc.center)
+          .setPopup(new maplibregl.Popup({ offset: 18 }).setHTML(`<b>${loc.name}</b><br/><span>${loc.type}</span>`))
+          .addTo(map);
+        marker.getElement().addEventListener('click', () => onSelect(loc));
+      });
+
+      const carCount = 14;
+      const markers = Array.from({ length: carCount }, (_, i) => {
+        const el = makeCarElement(i % 3 === 0 ? 1 : 0.82);
+        const marker = new maplibregl.Marker({ element: el, anchor: 'center', rotationAlignment: 'map' })
+          .setLngLat(vehicleRoutes[i % vehicleRoutes.length][0])
+          .addTo(map);
+        return marker;
+      });
+      markersRef.current = markers;
+
+      const animate = (now: number) => {
+        const { traffic: tv, layers: ls } = values.current;
+        if (ls.vehicles) {
+          markers.forEach((m, i) => {
+            const phase = ((now * (0.000018 + tv * 0.00000012)) + i / markers.length) % 1;
+            m.setLngLat(interpolate(vehicleRoutes[i % vehicleRoutes.length], phase));
+          });
+        }
+        animationRef.current = requestAnimationFrame(animate);
+      };
+      animationRef.current = requestAnimationFrame(animate);
+    });
+
+    return () => {
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      markersRef.current.forEach((m) => m.remove());
+      map.remove();
+      mapRef.current = null;
+    };
+  }, [onSelect]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const setVisibility = (pattern: RegExp, visible: boolean) => {
+      (map.getStyle().layers || []).forEach((layer) => {
+        if (pattern.test(layer.id)) {
+          try { map.setLayoutProperty(layer.id, 'visibility', visible ? 'visible' : 'none'); } catch {}
+        }
+      });
+    };
+    setVisibility(/building/i, layers.buildings);
+    setVisibility(/road|street|highway/i, layers.roads);
+    const p = map.getLayer('simulation-pollution');
+    if (p) map.setLayoutProperty('simulation-pollution', 'visibility', layers.pollution ? 'visible' : 'none');
+    const f = map.getLayer('simulation-flood');
+    if (f) map.setLayoutProperty('simulation-flood', 'visibility', layers.flood ? 'visible' : 'none');
+    markersRef.current.forEach((m) => {
+      m.getElement().style.display = layers.vehicles ? 'block' : 'none';
+    });
+    const brightness = time >= 18 || time < 6 ? 0.66 : time < 8 || time >= 16 ? 0.84 : 1;
+    const el = map.getContainer();
+    el.style.filter = `brightness(${brightness}) saturate(${time >= 18 || time < 6 ? 0.72 : 1})`;
+  }, [layers, time]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const radius = 20 + emissions * 0.42;
+    const floodOpacity = Math.min(0.52, 0.12 + rainfall / 260);
+    const poll = map.getLayer('simulation-pollution');
+    if (poll) {
+      map.setPaintProperty('simulation-pollution', 'circle-radius', ['interpolate', ['linear'], ['zoom'], 11, radius * .55, 14, radius, 17, radius * 1.9]);
+      map.setPaintProperty('simulation-pollution', 'circle-opacity', Math.min(0.42, 0.08 + emissions / 240));
     }
-  });
-  return (
-    <mesh ref={ref} position={[x, 0.13, z]} castShadow>
-      <boxGeometry args={vertical ? [0.28, 0.18, 0.55] : [0.55, 0.18, 0.28]} />
-      <meshStandardMaterial color="#e7c34b" />
-    </mesh>
-  );
-}
+    const flood = map.getLayer('simulation-flood');
+    if (flood) map.setPaintProperty('simulation-flood', 'fill-opacity', floodOpacity);
+  }, [emissions, rainfall, traffic]);
 
-function CityScene({ traffic }: { traffic: number }) {
-  const buildings = useMemo(() => Array.from({ length: 42 }, (_, i) => {
-    const x = ((i * 1.73) % 9) - 4.5;
-    const z = ((i * 2.31) % 9) - 4.5;
-    const nearRoad = Math.abs(x) < 1.15 || Math.abs(z) < 1.15;
-    return { x, z, height: nearRoad ? 0.35 + (i % 3) * 0.22 : 0.45 + (i % 6) * 0.25 };
-  }), []);
-
-  const vehicleCount = Math.max(4, Math.round(traffic / 7));
-
-  return (
-    <>
-      <PerspectiveCamera makeDefault position={[8, 9, 10]} fov={48} />
-      <ambientLight intensity={1.25} />
-      <directionalLight position={[5, 10, 4]} intensity={2.2} castShadow />
-      <color attach="background" args={['#07111f']} />
-
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[14, 14]} />
-        <meshStandardMaterial color="#273a2c" roughness={1} />
-      </mesh>
-
-      <Road position={[0, 0.012, 0]} rotation={0} length={14} />
-      <Road position={[0, 0.014, 0]} rotation={Math.PI / 2} length={14} />
-      <Road position={[-3.1, 0.014, 0]} rotation={0} length={14} />
-      <Road position={[3.1, 0.014, 0]} rotation={0} length={14} />
-
-      {buildings.map((b, i) => <Building key={i} position={[b.x, 0, b.z]} height={b.height} width={0.42 + (i % 3) * 0.08} />)}
-
-      {/* Landmark: Tata Steel */}
-      <mesh position={[-3.4, 0.75, -1.2]} castShadow>
-        <boxGeometry args={[1.15, 1.5, 0.85]} />
-        <meshStandardMaterial color="#b04b43" metalness={0.2} />
-      </mesh>
-      <mesh position={[-3.4, 1.7, -1.2]}>
-        <cylinderGeometry args={[0.18, 0.18, 0.65, 12]} />
-        <meshStandardMaterial color="#d7dde5" metalness={0.7} />
-      </mesh>
-
-      {/* Jubilee Park */}
-      <mesh position={[-0.4, 0.04, 2.8]} receiveShadow>
-        <cylinderGeometry args={[1.05, 1.05, 0.08, 32]} />
-        <meshStandardMaterial color="#4f8d59" />
-      </mesh>
-      {Array.from({ length: 9 }, (_, i) => (
-        <mesh key={i} position={[-1 + (i % 3) * 0.6, 0.42, 2.35 + Math.floor(i / 3) * 0.45]}>
-          <sphereGeometry args={[0.2, 12, 8]} />
-          <meshStandardMaterial color="#4e8752" />
-        </mesh>
-      ))}
-
-      {Array.from({ length: vehicleCount }, (_, i) => (
-        <Vehicle key={`h-${i}`} x={-5 + i * 0.7} z={0.38} speed={0.55 + traffic / 180} />
-      ))}
-      {Array.from({ length: Math.max(3, Math.round(vehicleCount / 2)) }, (_, i) => (
-        <Vehicle key={`v-${i}`} x={3.1} z={-5 + i * 1.1} speed={0.4 + traffic / 230} vertical />
-      ))}
-
-      <OrbitControls enableDamping dampingFactor={0.08} maxPolarAngle={Math.PI / 2.15} minDistance={5} maxDistance={17} />
-    </>
-  );
+  return <div ref={container} className="map-container" />;
 }
 
 export default function Home() {
@@ -119,30 +239,37 @@ export default function Home() {
   const [emissions, setEmissions] = useState(45);
   const [rainfall, setRainfall] = useState(20);
   const [time, setTime] = useState(14);
+  const [layers, setLayers] = useState({ buildings: true, roads: true, vehicles: true, pollution: true, flood: true });
+  const [selected, setSelected] = useState('Jamshedpur');
+  const selectedLocation = useMemo(() => locations.find((x) => x.name === selected), [selected]);
 
   const aqi = Math.round(42 + emissions * 0.7 + traffic * 0.18);
   const congestion = Math.round(Math.min(100, traffic * 1.05));
   const floodRisk = Math.round(Math.min(100, rainfall * 1.25));
   const health = Math.round(Math.max(0, 100 - aqi * 0.25 - congestion * 0.18 - floodRisk * 0.12));
 
+  const selectLocation = (loc: Location) => setSelected(loc.name);
+  const toggle = (key: keyof typeof layers) => setLayers((x) => ({ ...x, [key]: !x[key] }));
+
+  const layerRows: [keyof typeof layers, string][] = [
+    ['buildings', 'Real 3D Buildings'], ['roads', 'OpenStreetMap Roads'], ['vehicles', 'Detailed Moving Cars'],
+    ['pollution', 'Pollution Zones'], ['flood', 'Waterlogging'],
+  ];
+
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div>
-          <div className="eyebrow">SMART CITY DIGITAL TWIN</div>
-          <h1>JAMSHEDPUR</h1>
-        </div>
+        <div><div className="eyebrow">SMART CITY DIGITAL TWIN · OPENSTREETMAP</div><h1>JAMSHEDPUR</h1></div>
         <div className="time-badge">{String(Math.floor(time)).padStart(2, '0')}:00 <span>IST</span></div>
       </header>
 
       <section className="workspace">
         <aside className="panel left-panel">
           <div className="panel-title">CITY LAYERS</div>
-          {['3D Buildings', 'Road Network', 'Moving Vehicles', 'Pollution Zones', 'Waterlogging'].map((layer) => (
-            <label className="check-row" key={layer}>
-              <input type="checkbox" defaultChecked />
-              <span>{layer}</span>
-            </label>
+          {layerRows.map(([key, label]) => (
+            <button className="switch-row" key={key} onClick={() => toggle(key)}>
+              <span>{label}</span><i className={layers[key] ? 'switch on' : 'switch'}><b /></i>
+            </button>
           ))}
           <div className="divider" />
           <div className="panel-title">SIMULATION</div>
@@ -152,29 +279,32 @@ export default function Home() {
           <input type="range" min="0" max="100" value={emissions} onChange={(e) => setEmissions(+e.target.value)} />
           <label>Rainfall <b>{rainfall}%</b></label>
           <input type="range" min="0" max="100" value={rainfall} onChange={(e) => setRainfall(+e.target.value)} />
-          <label>Time of Day <b>{time}:00</b></label>
+          <label>Time of Day <b>{String(time).padStart(2,'0')}:00</b></label>
           <input type="range" min="0" max="23" value={time} onChange={(e) => setTime(+e.target.value)} />
+          <div className="time-presets">
+            {[7, 12, 18, 22].map((t) => <button key={t} onClick={() => setTime(t)}>{t === 7 ? 'Morning' : t === 12 ? 'Noon' : t === 18 ? 'Evening' : 'Night'}</button>)}
+          </div>
         </aside>
 
         <div className="city-view">
-          <Canvas shadows dpr={[1, 1.5]}>
-            <CityScene traffic={traffic} />
-          </Canvas>
-          <div className="map-label label-tata">TATA STEEL</div>
-          <div className="map-label label-bistupur">BISTUPUR</div>
-          <div className="map-label label-jubilee">JUBILEE PARK</div>
-          <div className="map-hint">Drag to orbit · Scroll to zoom · Change controls to simulate the city</div>
+          <MapView traffic={traffic} emissions={emissions} rainfall={rainfall} time={time} layers={layers} selected={selected} onSelect={selectLocation} />
+          <div className="selected-card"><span>SELECTED LOCATION</span><strong>{selected}</strong><small>{selectedLocation?.type ?? 'Interactive city map'}</small></div>
+          <div className="map-hint">Drag to orbit · Scroll to zoom · Click a location · Toggle live layers</div>
         </div>
 
         <aside className="panel right-panel">
           <div className="panel-title">CITY STATUS</div>
-          <div className="health-card"><span>CITY HEALTH INDEX</span><strong>{health}</strong><small>SIMULATED</small></div>
+          <div className="health-card"><span>CITY HEALTH INDEX</span><strong>{health}</strong><small>SIMULATED · LIVE CONTROLS</small></div>
           <div className="metric"><span>AIR QUALITY</span><strong>{aqi} AQI</strong><em className={aqi > 100 ? 'warn' : ''}>{aqi > 100 ? 'Elevated' : 'Moderate'}</em></div>
           <div className="metric"><span>TRAFFIC</span><strong>{congestion}%</strong><em>{congestion > 70 ? 'Heavy' : 'Moving'}</em></div>
           <div className="metric"><span>WATERLOGGING RISK</span><strong>{floodRisk}%</strong><em>{floodRisk > 60 ? 'High' : 'Low'}</em></div>
           <div className="divider" />
           <div className="panel-title">LOCATIONS</div>
-          {locations.map((location) => <button className="location-btn" key={location.name}><span>●</span><div><b>{location.name}</b><small>{location.type}</small></div></button>)}
+          {locations.map((location) => (
+            <button className={selected === location.name ? 'location-btn active' : 'location-btn'} key={location.name} onClick={() => setSelected(location.name)}>
+              <span>●</span><div><b>{location.name}</b><small>{location.type}</small></div>
+            </button>
+          ))}
         </aside>
       </section>
     </main>
