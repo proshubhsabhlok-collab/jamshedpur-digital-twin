@@ -1,0 +1,44 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; background: #050b13; color: #e8eef7; font-family: Arial, Helvetica, sans-serif; }
+body { overflow: hidden; }
+button, input { font: inherit; }
+.app-shell { height: 100vh; display: flex; flex-direction: column; background: radial-gradient(circle at 50% 0%, #12243b 0%, #050b13 55%); }
+.topbar { height: 82px; padding: 17px 25px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,.09); background: rgba(5,11,19,.88); backdrop-filter: blur(16px); z-index: 4; }
+.eyebrow { font-size: 10px; letter-spacing: 3px; color: #7d9bbd; margin-bottom: 4px; }
+h1 { margin: 0; font-size: 26px; letter-spacing: 6px; font-weight: 650; }
+.time-badge { padding: 9px 13px; border: 1px solid rgba(130,170,210,.25); border-radius: 9px; font-size: 14px; background: rgba(255,255,255,.04); }
+.time-badge span { color: #6e849b; font-size: 10px; margin-left: 5px; }
+.workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: 245px minmax(0,1fr) 255px; }
+.panel { z-index: 3; padding: 20px 17px; background: rgba(7,14,23,.92); border-color: rgba(255,255,255,.08); backdrop-filter: blur(15px); overflow-y: auto; }
+.left-panel { border-right: 1px solid rgba(255,255,255,.08); }
+.right-panel { border-left: 1px solid rgba(255,255,255,.08); }
+.panel-title { font-size: 10px; letter-spacing: 2px; color: #7791ad; margin-bottom: 14px; font-weight: 700; }
+.check-row { display: flex; align-items: center; gap: 9px; padding: 8px 0; color: #b9c6d5; font-size: 12px; }
+.check-row input { accent-color: #55a6e6; }
+.divider { height: 1px; background: rgba(255,255,255,.08); margin: 18px 0; }
+label:not(.check-row) { display: flex; justify-content: space-between; font-size: 11px; color: #91a4b8; margin: 14px 0 7px; }
+label b { color: #dce8f4; font-weight: 600; }
+input[type="range"] { width: 100%; accent-color: #5da9df; cursor: pointer; }
+.city-view { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.city-view canvas { width: 100% !important; height: 100% !important; }
+.map-label { position: absolute; padding: 5px 8px; border-radius: 5px; background: rgba(4,10,16,.76); border: 1px solid rgba(120,160,200,.22); color: #cbd8e6; font-size: 9px; letter-spacing: 1.2px; pointer-events: none; }
+.label-tata { left: 19%; top: 58%; }
+.label-bistupur { left: 52%; top: 51%; }
+.label-jubilee { left: 43%; top: 24%; }
+.map-hint { position: absolute; bottom: 13px; left: 50%; transform: translateX(-50%); color: #7890a7; font-size: 10px; background: rgba(4,9,15,.7); padding: 6px 10px; border-radius: 5px; pointer-events: none; white-space: nowrap; }
+.health-card { border: 1px solid rgba(87,155,204,.25); border-radius: 10px; padding: 14px; margin-bottom: 12px; background: linear-gradient(135deg, rgba(41,83,112,.22), rgba(255,255,255,.025)); }
+.health-card span, .health-card small { display: block; font-size: 9px; letter-spacing: 1.4px; color: #7e9ab4; }
+.health-card strong { display: block; font-size: 40px; line-height: 1; margin: 9px 0 5px; font-weight: 500; }
+.metric { padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,.06); }
+.metric span { display: block; color: #71879e; font-size: 9px; letter-spacing: 1.3px; }
+.metric strong { display: inline-block; margin-top: 5px; font-size: 18px; font-weight: 600; }
+.metric em { float: right; margin-top: 7px; font-size: 9px; color: #76a985; font-style: normal; }
+.metric em.warn { color: #d6a35e; }
+.location-btn { width: 100%; display: flex; gap: 9px; align-items: center; text-align: left; border: 0; border-bottom: 1px solid rgba(255,255,255,.05); padding: 9px 2px; color: #d6e1ec; background: transparent; cursor: pointer; }
+.location-btn:hover { background: rgba(255,255,255,.035); }
+.location-btn > span { color: #67a7d7; font-size: 9px; }
+.location-btn b, .location-btn small { display: block; }
+.location-btn b { font-size: 11px; font-weight: 600; }
+.location-btn small { color: #657b91; font-size: 8px; margin-top: 3px; }
+@media (max-width: 900px) { .workspace { grid-template-columns: 190px minmax(0,1fr); } .right-panel { display: none; } }
+@media (max-width: 650px) { .workspace { grid-template-columns: 1fr; } .left-panel { display: none; } .topbar { height: 65px; } h1 { font-size: 19px; } }
