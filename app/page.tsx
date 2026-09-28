@@ -195,16 +195,16 @@ function MapView({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || !map.isStyleLoaded()) return;
     const loc = locations.find((x) => x.name === selected);
     if (loc) map.flyTo({ center: loc.center, zoom: 15.2, pitch: 62, duration: 1100 });
   }, [selected]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || !map.isStyleLoaded()) return;
     const setVisibility = (pattern: RegExp, visible: boolean) => {
-      (map.getStyle().layers || []).forEach((layer) => {
+      (map.getStyle()?.layers || []).forEach((layer) => {
         if (pattern.test(layer.id)) {
           try { map.setLayoutProperty(layer.id, 'visibility', visible ? 'visible' : 'none'); } catch {}
         }
@@ -226,7 +226,7 @@ function MapView({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || !map.isStyleLoaded()) return;
     const radius = 20 + emissions * 0.42;
     const floodOpacity = Math.min(0.52, 0.12 + rainfall / 260);
     const poll = map.getLayer('simulation-pollution');
