@@ -107,7 +107,7 @@ function MapView({ traffic, emissions, rainfall, time, layers, selected, onSelec
     buildingSpots.forEach(([lat,lng,size]) => {
       const w = size * 1.35;
       const h = size;
-      const bounds: L.LatLngBoundsExpression = [
+      const bounds = [
         [lat - h/120000, lng - w/120000],
         [lat + h/120000, lng + w/120000],
       ];
@@ -209,7 +209,7 @@ function MapView({ traffic, emissions, rainfall, time, layers, selected, onSelec
       const el = (layer as any).getElement?.();
       if (el) el.style.display = layers.buildings ? 'block' : 'none';
     });
-    data.routeGroup.eachLayer((layer:L.Layer) => {
+    data.routeGroup.eachLayer((layer:any) => {
       const el = (layer as any).getElement?.();
       if (el) el.style.display = layers.roads ? 'block' : 'none';
     });
