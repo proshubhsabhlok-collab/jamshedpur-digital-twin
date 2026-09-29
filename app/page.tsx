@@ -125,7 +125,7 @@ function MapView({ traffic, emissions, rainfall, layers, selected, onSelect }: {
     buildingSpots.forEach(([lat,lng,size]) => {
       const w = size * 1.35;
       const h = size;
-      const bounds = [
+      const bounds: [[number, number], [number, number]] = [
         [lat - h/120000, lng - w/120000],
         [lat + h/120000, lng + w/120000],
       ];
