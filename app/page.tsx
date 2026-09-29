@@ -1,14 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import * as maplibregl from 'maplibre-gl';
-import 'maplibre-gl/dist/maplibre-gl.css';
-
-// Use a stable public MapLibre worker so the map also renders correctly on Vercel/Next.js.
-if (typeof window !== 'undefined') {
-  maplibregl.setWorkerUrl('https://unpkg.com/maplibre-gl@6.11.2/dist/maplibre-gl-csp-worker.js');
-}
-import './globals.css';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 type Location = { name: string; type: string; center: [number, number] };
 
@@ -35,202 +29,139 @@ function interpolate(route: [number,number][], t: number): [number,number] {
 }
 
 function MapView({ traffic, emissions, rainfall, time, layers, selected, onSelect }: {
-  traffic:number; emissions:number; rainfall:number; time:number; layers:Record<string,boolean>; selected:string; onSelect:(l:Location)=>void;
+  traffic:number; emissions:number; rainfall:number; time:number;
+  layers:Record<string,boolean>; selected:string; onSelect:(l:Location)=>void;
 }) {
   const container = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
-  const markersRef = useRef<maplibregl.Marker[]>([]);
+  const mapRef = useRef<L.Map | null>(null);
+  const carsRef = useRef<L.Marker[]>([]);
   const animationRef = useRef<number | null>(null);
-  const values = useRef({ traffic, layers });
-  values.current = { traffic, layers };
+  const values = useRef({ traffic, emissions, rainfall, time, layers });
+  values.current = { traffic, emissions, rainfall, time, layers };
 
   useEffect(() => {
-    let cancelled = false;
+    if (!container.current || mapRef.current) return;
 
-    const map = new maplibregl.Map({
-      container: container.current as HTMLElement,
-      style: 'https://tiles.openfreemap.org/styles/liberty',
-      center: [86.2029, 22.8046],
-      zoom: 13.65,
-      pitch: 52,
-      bearing: -12,
+    const map = L.map(container.current, {
+      center: [22.8046, 86.2029],
+      zoom: 13.5,
+      zoomControl: false,
+      preferCanvas: true,
     });
 
     mapRef.current = map;
-    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
 
-    const add3DBuildings = () => {
-      if (cancelled) return;
-      const style = map.getStyle();
+    L.control.zoom({ position: 'topright' }).addTo(map);
 
-      const existing3d = (style.layers || []).find((layer: any) =>
-        layer.type === 'fill-extrusion' && String(layer['source-layer'] || '').toLowerCase().includes('building')
-      );
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors',
+    }).addTo(map);
 
-      if (existing3d) {
-        map.setLayoutProperty(existing3d.id, 'visibility', layers.buildings ? 'visible' : 'none');
-        return;
-      }
+    const zoneGroup = L.layerGroup().addTo(map);
+    const routeGroup = L.layerGroup().addTo(map);
+    const markerGroup = L.layerGroup().addTo(map);
 
-      const buildingLayer = (style.layers || []).find((layer: any) =>
-        String(layer['source-layer'] || '').toLowerCase() === 'building' &&
-        typeof layer.source === 'string'
-      ) as any;
-
-      if (!buildingLayer) return;
-
-      const firstSymbol = (style.layers || []).find((layer: any) =>
-        layer.type === 'symbol' && typeof layer.source === 'string'
-      );
-
-      map.addLayer({
-        id: 'jamshedpur-3d-buildings',
-        type: 'fill-extrusion',
-        source: buildingLayer.source,
-        'source-layer': buildingLayer['source-layer'],
-        minzoom: 12.5,
-        filter: ['!=', ['get', 'hide_3d'], true],
-        paint: {
-          'fill-extrusion-color': [
-            'interpolate', ['linear'], ['coalesce', ['get', 'render_height'], ['get', 'height'], 8],
-            0, '#8a9baa',
-            12, '#aebbc5',
-            30, '#718797',
-            60, '#526978',
-            120, '#3e5668'
-          ],
-          'fill-extrusion-height': [
-            'coalesce', ['get', 'render_height'], ['get', 'height'], 8
-          ],
-          'fill-extrusion-base': [
-            'coalesce', ['get', 'render_min_height'], ['get', 'min_height'], 0
-          ],
-          'fill-extrusion-opacity': 0.92,
-        }
-      }, firstSymbol?.id);
-
-      map.setLayoutProperty('jamshedpur-3d-buildings', 'visibility', layers.buildings ? 'visible' : 'none');
+    const addZone = (center: [number,number], radius: number, cls: string, label: string) => {
+      const circle = L.circle(center, {
+        radius,
+        className: cls,
+        stroke: true,
+        weight: 1.5,
+        fillOpacity: 0.14,
+      }).addTo(zoneGroup);
+      circle.bindTooltip(label, { direction: 'top', className: 'zone-tooltip' });
+      return circle;
     };
 
-    map.on('load', () => {
-      if (cancelled) return;
+    const pollutionZone = addZone([22.8000,86.1950], 1050, 'pollution-zone', 'AIR POLLUTION');
+    const trafficZone = addZone([22.8040,86.2020], 780, 'traffic-zone', 'TRAFFIC HOTSPOT');
+    const floodZone = L.polygon([
+      [22.810,86.201],[22.810,86.209],[22.816,86.211],[22.819,86.204],[22.815,86.199]
+    ], { className:'flood-zone', weight:1.5, fillOpacity:.18 }).addTo(zoneGroup);
+    floodZone.bindTooltip('WATERLOGGING RISK', { direction:'center', className:'zone-tooltip' });
 
-      add3DBuildings();
-
-      locations.forEach((loc) => {
-        const el = document.createElement('button');
-        el.className = 'city-marker';
-        el.type = 'button';
-        el.setAttribute('aria-label', loc.name);
-        el.innerHTML = '<span></span>';
-        el.addEventListener('click', () => onSelect(loc));
-
-        new maplibregl.Marker({ element: el, anchor: 'bottom' })
-          .setLngLat([loc.center[1], loc.center[0]])
-          .setPopup(new maplibregl.Popup({ offset: 18 }).setHTML(
-            '<strong>' + loc.name + '</strong><br/><small>' + loc.type + '</small>'
-          ))
-          .addTo(map);
-      });
-
-      const pollution = {
-        type: 'geojson',
-        data: {
-          type: 'Feature',
-          geometry: { type: 'Point', coordinates: [86.1950, 22.8000] },
-          properties: {}
-        }
-      } as any;
-
-      map.addSource('pollution-zone', pollution);
-      map.addLayer({
-        id: 'pollution-zone-fill',
-        type: 'circle',
-        source: 'pollution-zone',
-        paint: {
-          'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 25, 14, 75, 16, 145],
-          'circle-color': '#ef5350',
-          'circle-opacity': 0.16,
-          'circle-stroke-color': '#ff8178',
-          'circle-stroke-opacity': 0.65,
-          'circle-stroke-width': 1
-        }
-      });
-
-      const floodGeo = {
-        type: 'Feature',
-        geometry: {
-          type: 'Polygon',
-          coordinates: [[[86.201,22.810],[86.209,22.810],[86.211,22.816],[86.204,22.819],[86.199,22.815],[86.201,22.810]]]
-        },
-        properties: {}
-      } as any;
-
-      map.addSource('flood-zone', { type: 'geojson', data: floodGeo });
-      map.addLayer({
-        id: 'flood-zone-fill',
-        type: 'fill',
-        source: 'flood-zone',
-        paint: { 'fill-color': '#38a8ff', 'fill-opacity': 0.16, 'fill-outline-color': '#70c8ff' }
-      });
-
-      map.addSource('traffic-routes', {
-        type: 'geojson',
-        data: {
-          type: 'FeatureCollection',
-          features: routes.map(route => ({
-            type: 'Feature',
-            geometry: { type: 'LineString', coordinates: route.map(([lat,lng]) => [lng,lat]) },
-            properties: {}
-          }))
-        }
-      } as any);
-
-      map.addLayer({
-        id: 'traffic-routes',
-        type: 'line',
-        source: 'traffic-routes',
-        paint: {
-          'line-color': '#f2b84b',
-          'line-width': 2,
-          'line-opacity': 0.42,
-          'line-dasharray': [1.2, 1.8]
-        }
-      });
-
-      const cars = Array.from({length:14}, (_,i) => {
-        const el = document.createElement('div');
-        el.className = 'car-marker';
-        el.innerHTML = '<div class="car-body"><i></i><i></i></div>';
-        const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
-          .setLngLat([routes[i % routes.length][0][1], routes[i % routes.length][0][0]])
-          .addTo(map);
-        return marker;
-      });
-      markersRef.current = cars;
-
-      const animate = (now:number) => {
-        const { traffic:tv, layers:ls } = values.current;
-        cars.forEach((car,i) => {
-          const t = (now * (0.000008 + tv * 0.00000007) + i/cars.length) % 1;
-          const [lat,lng] = interpolate(routes[i % routes.length], t);
-          car.setLngLat([lng, lat]);
-          const el = car.getElement();
-          el.classList.toggle('hidden-car', !ls.vehicles);
-        });
-        animationRef.current = requestAnimationFrame(animate);
-      };
-      animationRef.current = requestAnimationFrame(animate);
-
-      setTimeout(() => map.resize(), 80);
-      setTimeout(() => map.resize(), 500);
+    routes.forEach((route) => {
+      L.polyline(route, {
+        color: '#f1ad45',
+        weight: 4,
+        opacity: .55,
+        dashArray: '8 8',
+        lineCap: 'round',
+      }).addTo(routeGroup);
     });
 
+    const buildingSpots: [number,number,number][] = [
+      [22.7992,86.1938,28],[22.8002,86.1948,42],[22.8011,86.1960,22],
+      [22.7977,86.1884,18],[22.7988,86.1892,25],[22.8034,86.2010,16],
+      [22.8045,86.2025,24],[22.8060,86.1918,20],[22.8070,86.1930,14],
+      [22.8202,86.2072,18],[22.8215,86.2085,22],[22.8223,86.2096,14],
+    ];
+
+    const buildingGroup = L.layerGroup().addTo(map);
+    buildingSpots.forEach(([lat,lng,size]) => {
+      const w = size * 1.35;
+      const h = size;
+      const bounds: L.LatLngBoundsExpression = [
+        [lat - h/120000, lng - w/120000],
+        [lat + h/120000, lng + w/120000],
+      ];
+      L.rectangle(bounds, {
+        className: 'building-footprint',
+        weight: 1,
+        fillOpacity: .62,
+      }).addTo(buildingGroup);
+    });
+
+    locations.forEach((loc) => {
+      const icon = L.divIcon({
+        className: 'location-marker-wrap',
+        html: '<div class="location-marker"><span></span></div>',
+        iconSize: [22,22],
+        iconAnchor: [11,20],
+      });
+      L.marker(loc.center, { icon }).addTo(markerGroup)
+        .bindPopup('<strong>'+loc.name+'</strong><br/><small>'+loc.type+'</small>')
+        .on('click', () => onSelect(loc));
+    });
+
+    const carIcon = L.divIcon({
+      className: 'car-marker-wrap',
+      html: '<div class="car-marker"><span></span></div>',
+      iconSize: [22,14],
+      iconAnchor: [11,7],
+    });
+
+    const cars = Array.from({length: 16}, (_,i) =>
+      L.marker(routes[i % routes.length][0], { icon: carIcon, interactive:false }).addTo(map)
+    );
+    carsRef.current = cars;
+
+    const animate = (now:number) => {
+      const { traffic:tv, layers:ls } = values.current;
+      cars.forEach((car,i) => {
+        const t = (now * (0.000008 + tv * 0.00000007) + i/cars.length) % 1;
+        const [lat,lng] = interpolate(routes[i % routes.length], t);
+        car.setLatLng([lat,lng]);
+        const el = car.getElement();
+        if (el) el.style.display = ls.vehicles ? 'block' : 'none';
+      });
+      animationRef.current = requestAnimationFrame(animate);
+    };
+    animationRef.current = requestAnimationFrame(animate);
+
+    const resize = () => map.invalidateSize();
+    window.addEventListener('resize', resize);
+    setTimeout(resize, 100);
+    setTimeout(resize, 700);
+
+    (map as any)._dtLayers = { pollutionZone, trafficZone, floodZone, buildingGroup, routeGroup, zoneGroup };
+
     return () => {
-      cancelled = true;
+      window.removeEventListener('resize', resize);
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
-      markersRef.current.forEach(marker => marker.remove());
-      markersRef.current = [];
+      cars.forEach(c => c.remove());
+      carsRef.current = [];
       map.remove();
       mapRef.current = null;
     };
@@ -240,33 +171,48 @@ function MapView({ traffic, emissions, rainfall, time, layers, selected, onSelec
     const map = mapRef.current;
     if (!map) return;
     const loc = locations.find(x => x.name === selected);
-    if (loc) map.flyTo({ center: [loc.center[1], loc.center[0]], zoom: 15.2, pitch: 58, duration: 900 });
+    if (loc) map.flyTo(loc.center, 15, { duration: .8 });
   }, [selected]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
+    if (!map) return;
+    const data = (map as any)._dtLayers;
+    if (!data) return;
 
-    if (map.getLayer('jamshedpur-3d-buildings')) {
-      map.setLayoutProperty('jamshedpur-3d-buildings', 'visibility', layers.buildings ? 'visible' : 'none');
+    const pollutionSize = 650 + emissions * 11;
+    const trafficSize = 450 + traffic * 8;
+    data.pollutionZone.setRadius(pollutionSize);
+    data.trafficZone.setRadius(trafficSize);
+    data.pollutionZone.setStyle({
+      opacity: layers.pollution ? .8 : 0,
+      fillOpacity: layers.pollution ? Math.min(.32, .08 + emissions/350) : 0,
+    });
+    data.trafficZone.setStyle({
+      opacity: layers.roads ? .8 : 0,
+      fillOpacity: layers.roads ? Math.min(.3, .07 + traffic/380) : 0,
+    });
+    data.floodZone?.setStyle?.({
+      opacity: layers.flood ? .8 : 0,
+      fillOpacity: layers.flood ? Math.min(.36, .08 + rainfall/300) : 0,
+    });
+    data.buildingGroup.eachLayer((layer:L.Layer) => {
+      const el = (layer as any).getElement?.();
+      if (el) el.style.display = layers.buildings ? 'block' : 'none';
+    });
+    data.routeGroup.eachLayer((layer:L.Layer) => {
+      const el = (layer as any).getElement?.();
+      if (el) el.style.display = layers.roads ? 'block' : 'none';
+    });
+
+    const tilePane = map.getPane('tilePane');
+    if (tilePane) {
+      tilePane.style.filter = time >= 18 || time < 6
+        ? 'brightness(.58) saturate(.75)'
+        : time < 8 || time >= 16
+          ? 'brightness(.86) saturate(.9)'
+          : 'brightness(1)';
     }
-
-    if (map.getLayer('traffic-routes')) {
-      map.setLayoutProperty('traffic-routes', 'visibility', layers.roads ? 'visible' : 'none');
-    }
-
-    if (map.getLayer('pollution-zone-fill')) {
-      map.setPaintProperty('pollution-zone-fill', 'circle-opacity', layers.pollution ? Math.min(.5, .08 + emissions/220) : 0);
-      map.setPaintProperty('pollution-zone-fill', 'circle-radius', ['interpolate', ['linear'], ['zoom'], 11, 25 + emissions*.2, 14, 75 + emissions*2.5, 16, 145 + emissions*4]);
-    }
-
-    if (map.getLayer('flood-zone-fill')) {
-      map.setPaintProperty('flood-zone-fill', 'fill-opacity', layers.flood ? Math.min(.55, .08 + rainfall/250) : 0);
-    }
-
-    const night = time >= 18 || time < 6;
-    const canvas = map.getCanvas();
-    canvas.style.filter = `brightness(${night ? .58 : time < 8 || time >= 16 ? .84 : 1}) saturate(${night ? .78 : 1})`;
   }, [layers, emissions, rainfall, time]);
 
   return <div ref={container} className="map-container" />;
@@ -281,19 +227,43 @@ export default function Home() {
   const health=Math.round(Math.max(0,100-aqi*.25-congestion*.18-floodRisk*.12));
   const selectLocation=useCallback((loc:Location)=>setSelected(loc.name),[]);
   const toggle=(key:keyof typeof layers)=>setLayers(x=>({...x,[key]:!x[key]}));
-  const rows:[keyof typeof layers,string][]=[['buildings','Real 3D Buildings'],['roads','OpenStreetMap Roads'],['vehicles','Detailed Moving Cars'],['pollution','Pollution Zones'],['flood','Waterlogging']];
+  const rows:[keyof typeof layers,string][]=[['buildings','Building Footprints'],['roads','Road Network'],['vehicles','Moving Vehicles'],['pollution','Pollution Zones'],['flood','Waterlogging']];
+
   return <main className="app-shell">
-    <header className="topbar"><div><div className="eyebrow">SMART CITY DIGITAL TWIN · 3D OPEN MAP</div><h1>JAMSHEDPUR</h1></div><div className="time-badge">{String(time).padStart(2,'0')}:00 <span>IST</span></div></header>
+    <header className="topbar">
+      <div><div className="eyebrow">SMART CITY DIGITAL TWIN · INTERACTIVE 2D MAP</div><h1>JAMSHEDPUR</h1></div>
+      <div className="time-badge">{String(time).padStart(2,'0')}:00 <span>IST</span></div>
+    </header>
     <section className="workspace">
-      <aside className="panel left-panel"><div className="panel-title">CITY LAYERS</div>{rows.map(([key,label])=><button className="switch-row" key={key} onClick={()=>toggle(key)}><span>{label}</span><i className={layers[key]?'switch on':'switch'}><b/></i></button>)}
-      <div className="divider"/><div className="panel-title">SIMULATION</div>
-      <label>Traffic Volume <b>{traffic}%</b></label><input type="range" min="0" max="100" value={traffic} onChange={e=>setTraffic(+e.target.value)}/>
-      <label>Industrial Emissions <b>{emissions}%</b></label><input type="range" min="0" max="100" value={emissions} onChange={e=>setEmissions(+e.target.value)}/>
-      <label>Rainfall <b>{rainfall}%</b></label><input type="range" min="0" max="100" value={rainfall} onChange={e=>setRainfall(+e.target.value)}/>
-      <label>Time of Day <b>{String(time).padStart(2,'0')}:00</b></label><input type="range" min="0" max="23" value={time} onChange={e=>setTime(+e.target.value)}/>
-      <div className="time-presets">{[[7,'Morning'],[12,'Noon'],[18,'Evening'],[22,'Night']].map(([t,label])=><button key={t} onClick={()=>setTime(Number(t))}>{label}</button>)}</div></aside>
-      <div className="city-view"><MapView traffic={traffic} emissions={emissions} rainfall={rainfall} time={time} layers={layers} selected={selected} onSelect={selectLocation}/><div className="selected-card"><span>SELECTED LOCATION</span><strong>{selected}</strong><small>{selectedLocation?.type ?? 'Interactive city map'}</small></div><div className="map-hint">3D Buildings · Drag · Scroll · Right-drag to rotate · Click locations</div></div>
-      <aside className="panel right-panel"><div className="panel-title">CITY STATUS</div><div className="health-card"><span>CITY HEALTH INDEX</span><strong>{health}</strong><small>SIMULATED · LIVE CONTROLS</small></div><div className="metric"><span>AIR QUALITY</span><strong>{aqi} AQI</strong><em>{aqi>100?'Elevated':'Moderate'}</em></div><div className="metric"><span>TRAFFIC</span><strong>{congestion}%</strong><em>{congestion>70?'Heavy':'Moving'}</em></div><div className="metric"><span>WATERLOGGING RISK</span><strong>{floodRisk}%</strong><em>{floodRisk>60?'High':'Low'}</em></div><div className="divider"/><div className="panel-title">LOCATIONS</div>{locations.map(loc=><button className={selected===loc.name?'location-btn active':'location-btn'} key={loc.name} onClick={()=>setSelected(loc.name)}><span>●</span><div><b>{loc.name}</b><small>{loc.type}</small></div></button>)}</aside>
+      <aside className="panel left-panel">
+        <div className="panel-title">MAP LAYERS</div>
+        {rows.map(([key,label])=><button className="switch-row" key={key} onClick={()=>toggle(key)}><span>{label}</span><i className={layers[key]?'switch on':'switch'}><b/></i></button>)}
+        <div className="divider"/>
+        <div className="panel-title">SIMULATION</div>
+        <label>Traffic Volume <b>{traffic}%</b></label><input type="range" min="0" max="100" value={traffic} onChange={e=>setTraffic(+e.target.value)}/>
+        <label>Industrial Emissions <b>{emissions}%</b></label><input type="range" min="0" max="100" value={emissions} onChange={e=>setEmissions(+e.target.value)}/>
+        <label>Rainfall <b>{rainfall}%</b></label><input type="range" min="0" max="100" value={rainfall} onChange={e=>setRainfall(+e.target.value)}/>
+        <label>Time of Day <b>{String(time).padStart(2,'0')}:00</b></label><input type="range" min="0" max="23" value={time} onChange={e=>setTime(+e.target.value)}/>
+        <div className="time-presets">{[[7,'Morning'],[12,'Noon'],[18,'Evening'],[22,'Night']].map(([t,label])=><button key={t} onClick={()=>setTime(Number(t))}>{label}</button>)}</div>
+      </aside>
+
+      <div className="city-view">
+        <MapView traffic={traffic} emissions={emissions} rainfall={rainfall} time={time} layers={layers} selected={selected} onSelect={selectLocation}/>
+        <div className="selected-card"><span>SELECTED LOCATION</span><strong>{selected === 'Jamshedpur' ? 'Jamshedpur City' : selected}</strong><small>{selectedLocation?.type ?? 'Interactive urban map'}</small></div>
+        <div className="map-legend"><span><i className="legend-dot traffic-dot"/>Traffic</span><span><i className="legend-dot pollution-dot"/>Pollution</span><span><i className="legend-dot flood-dot"/>Waterlogging</span><span><i className="legend-building"/>Buildings</span></div>
+        <div className="map-hint">Drag · Scroll to zoom · Click a location</div>
+      </div>
+
+      <aside className="panel right-panel">
+        <div className="panel-title">CITY STATUS</div>
+        <div className="health-card"><span>CITY HEALTH INDEX</span><strong>{health}</strong><small>SIMULATED · LIVE CONTROLS</small></div>
+        <div className="metric"><span>AIR QUALITY</span><strong>{aqi} AQI</strong><em>{aqi>100?'Elevated':'Moderate'}</em></div>
+        <div className="metric"><span>TRAFFIC</span><strong>{congestion}%</strong><em>{congestion>70?'Heavy':'Moving'}</em></div>
+        <div className="metric"><span>WATERLOGGING RISK</span><strong>{floodRisk}%</strong><em>{floodRisk>60?'High':'Low'}</em></div>
+        <div className="divider"/>
+        <div className="panel-title">LOCATIONS</div>
+        {locations.map(loc=><button className={selected===loc.name?'location-btn active':'location-btn'} key={loc.name} onClick={()=>setSelected(loc.name)}><span>●</span><div><b>{loc.name}</b><small>{loc.type}</small></div></button>)}
+      </aside>
     </section>
   </main>;
 }
