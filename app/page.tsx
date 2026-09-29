@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import * as L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 type Location = { name: string; type: string; center: [number, number] };
@@ -33,8 +32,8 @@ function MapView({ traffic, emissions, rainfall, time, layers, selected, onSelec
   layers:Record<string,boolean>; selected:string; onSelect:(l:Location)=>void;
 }) {
   const container = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const carsRef = useRef<L.Marker[]>([]);
+  const mapRef = useRef<any>(null);
+  const carsRef = useRef<any[]>([]);
   const animationRef = useRef<number | null>(null);
   const values = useRef({ traffic, emissions, rainfall, time, layers });
   values.current = { traffic, emissions, rainfall, time, layers };
@@ -42,7 +41,13 @@ function MapView({ traffic, emissions, rainfall, time, layers, selected, onSelec
   useEffect(() => {
     if (!container.current || mapRef.current) return;
 
-    const map = L.map(container.current, {
+    let disposed = false;
+
+    const initMap = async () => {
+      const L = await import('leaflet');
+      if (disposed || !container.current || mapRef.current) return;
+
+      const map = L.map(container.current, {
       center: [22.8046, 86.2029],
       zoom: 13.5,
       zoomControl: false,
@@ -158,6 +163,7 @@ function MapView({ traffic, emissions, rainfall, time, layers, selected, onSelec
     (map as any)._dtLayers = { pollutionZone, trafficZone, floodZone, buildingGroup, routeGroup, zoneGroup };
 
     return () => {
+      disposed = true;
       window.removeEventListener('resize', resize);
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
       cars.forEach(c => c.remove());
@@ -165,6 +171,9 @@ function MapView({ traffic, emissions, rainfall, time, layers, selected, onSelec
       map.remove();
       mapRef.current = null;
     };
+    };
+
+    initMap();
   }, [onSelect]);
 
   useEffect(() => {
@@ -196,7 +205,7 @@ function MapView({ traffic, emissions, rainfall, time, layers, selected, onSelec
       opacity: layers.flood ? .8 : 0,
       fillOpacity: layers.flood ? Math.min(.36, .08 + rainfall/300) : 0,
     });
-    data.buildingGroup.eachLayer((layer:L.Layer) => {
+    data.buildingGroup.eachLayer((layer:any) => {
       const el = (layer as any).getElement?.();
       if (el) el.style.display = layers.buildings ? 'block' : 'none';
     });
