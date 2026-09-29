@@ -25,7 +25,19 @@ input[type="range"] { width:100%; accent-color:#64aee2; cursor:pointer; }
 .time-presets button { border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.03); color:#91a5b9; border-radius:5px; padding:6px 4px; font-size:9px; cursor:pointer; }
 .city-view { position:relative; min-width:0; min-height:0; overflow:hidden; background:#17222d; }
 .map-container { position:absolute; inset:0; }
-.car-marker { width:46px; height:28px; pointer-events:none; transform-origin:center; filter:drop-shadow(0 3px 3px rgba(0,0,0,.6)); }
+.maplibregl-map { width:100%; height:100%; }
+.maplibregl-ctrl-group { background:rgba(7,16,25,.86) !important; border:1px solid rgba(180,210,235,.2) !important; }
+.maplibregl-ctrl button { filter:invert(1) brightness(1.6); }
+.maplibregl-ctrl-attrib { background:rgba(7,16,25,.72) !important; color:#b8c8d5 !important; }
+.maplibregl-ctrl-attrib a { color:#a8c9e0 !important; }
+.city-marker { width:18px; height:18px; padding:0; border:1px solid rgba(255,255,255,.9); border-radius:50% 50% 50% 0; transform:rotate(-45deg); background:#4b9dd0; box-shadow:0 2px 9px rgba(0,0,0,.65); cursor:pointer; }
+.city-marker span { display:block; width:6px; height:6px; margin:5px; border-radius:50%; background:#e9f6ff; }
+.car-marker { width:24px; height:13px; pointer-events:none; filter:drop-shadow(0 2px 3px rgba(0,0,0,.7)); transition:opacity .15s; }
+.car-body { position:relative; width:24px; height:11px; margin-top:2px; border-radius:5px 6px 3px 3px; background:#405a70; border:1px solid #09131c; transform:skewX(-5deg); }
+.car-body:before { content:""; position:absolute; left:5px; top:-4px; width:12px; height:6px; border-radius:5px 5px 1px 1px; background:#78a8c2; border:1px solid #d2edf9; }
+.car-body i { position:absolute; width:5px; height:5px; border-radius:50%; background:#111820; border:1px solid #7c8b96; bottom:-4px; }
+.car-body i:first-child { left:3px; }.car-body i:last-child { right:3px; }
+.hidden-car { opacity:0 !important; pointer-events:none !important; }
 .selected-card { position:absolute; left:15px; top:15px; z-index:3; min-width:175px; padding:11px 13px; border-radius:8px; background:rgba(5,12,19,.82); border:1px solid rgba(160,195,220,.2); backdrop-filter:blur(10px); pointer-events:none; }
 .selected-card span, .selected-card small { display:block; color:#7892a9; font-size:8px; letter-spacing:1.2px; }
 .selected-card strong { display:block; font-size:16px; margin:4px 0; font-weight:600; }
@@ -36,6 +48,7 @@ input[type="range"] { width:100%; accent-color:#64aee2; cursor:pointer; }
 .metric { padding:11px 0; border-bottom:1px solid rgba(255,255,255,.06); }
 .metric span { display:block; color:#71879e; font-size:9px; letter-spacing:1.3px; }.metric strong { display:inline-block; margin-top:5px; font-size:18px; font-weight:600; }.metric em { float:right; margin-top:7px; font-size:9px; color:#76a985; font-style:normal; }.metric em.warn { color:#d6a35e; }
 .location-btn { width:100%; display:flex; gap:9px; align-items:center; text-align:left; border:0; border-bottom:1px solid rgba(255,255,255,.05); padding:9px 2px; color:#d6e1ec; background:transparent; cursor:pointer; border-radius:5px; }.location-btn:hover,.location-btn.active { background:rgba(255,255,255,.045); }.location-btn > span { color:#67a7d7; font-size:9px; }.location-btn b,.location-btn small { display:block; }.location-btn b { font-size:11px; font-weight:600; }.location-btn small { color:#657b91; font-size:8px; margin-top:3px; }
-.maplibregl-popup-content { background:#0b1621; color:#e8eef7; border:1px solid #31485b; border-radius:7px; font-size:11px; }.maplibregl-popup-tip { border-top-color:#0b1621; }
+.maplibregl-popup-content { background:#0b1621; color:#e8eef7; border:1px solid #31485b; border-radius:7px; font-size:11px; }
+.maplibregl-popup-content strong { font-size:12px; }.maplibregl-popup-content small { color:#8ea5b8; }.maplibregl-popup-tip { border-top-color:#0b1621; }
 @media (max-width:900px) { .workspace { grid-template-columns:190px minmax(0,1fr); }.right-panel { display:none; } }
 @media (max-width:650px) { .workspace { grid-template-columns:1fr; }.left-panel { display:none; }.topbar { height:65px; } h1 { font-size:19px; } }
