@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+
+// Use a stable public MapLibre worker so the map also renders correctly on Vercel/Next.js.
+if (typeof window !== 'undefined') {
+  maplibregl.setWorkerUrl('https://unpkg.com/maplibre-gl@6.11.2/dist/maplibre-gl-csp-worker.js');
+}
 import './globals.css';
 
 type Location = { name: string; type: string; center: [number, number] };
@@ -83,7 +88,7 @@ function MapView({ traffic, emissions, rainfall, time, layers, selected, onSelec
         type: 'fill-extrusion',
         source: buildingLayer.source,
         'source-layer': buildingLayer['source-layer'],
-        minzoom: 14,
+        minzoom: 12.5,
         filter: ['!=', ['get', 'hide_3d'], true],
         paint: {
           'fill-extrusion-color': [
