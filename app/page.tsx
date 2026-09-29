@@ -2,8 +2,10 @@
 
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import maplibregl from 'maplibre-gl';
-import type { Map as MapLibreMap, Marker } from 'maplibre-gl';
+import { Map as MapLibreGLMap, Marker, NavigationControl, Popup, setWorkerUrl } from 'maplibre-gl';
+import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
+
+setWorkerUrl('/maplibre/maplibre-gl-worker.mjs');
 
 type Location = { name: string; type: string; center: [number, number] };
 
@@ -42,16 +44,16 @@ function interpolate(route: [number, number][], t: number) {
 function MapView({ traffic, emissions, rainfall, time, layers, selected, onSelect }: { traffic: number; emissions: number; rainfall: number; time: number; layers: Record<string, boolean>; selected: string; onSelect: (location: Location) => void; }) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
-  const markersRef = useRef<Marker[]>([]);
+  const markersRef = useRef<MapLibreMarker[]>([]);
   const animationRef = useRef<number | null>(null);
   const values = useRef({ traffic, emissions, rainfall, time, layers });
   values.current = { traffic, emissions, rainfall, time, layers };
 
   useEffect(() => {
     if (!container.current || mapRef.current) return;
-    const map = new maplibregl.Map({ container: container.current, style: 'https://tiles.openfreemap.org/styles/liberty', center: [86.2029, 22.8046], zoom: 13.7, pitch: 58, bearing: -12, maxPitch: 70, attributionControl: {} });
+    const map = new MapLibreGLMap({ container: container.current, style: 'https://tiles.openfreemap.org/styles/liberty', center: [86.2029, 22.8046], zoom: 13.7, pitch: 58, bearing: -12, maxPitch: 70, attributionControl: {} });
     mapRef.current = map;
-    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+    map.addControl(new NavigationControl({ visualizePitch: true }), 'top-right');
     const resizeMap = () => { try { map.resize(); } catch {} };
     const observer = new ResizeObserver(resizeMap);
     observer.observe(container.current);
@@ -73,9 +75,9 @@ function MapView({ traffic, emissions, rainfall, time, layers, selected, onSelec
       if (!map.getLayer('simulation-pollution')) map.addLayer({ id: 'simulation-pollution', type: 'circle', source: 'pollution', paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 16, 14, 42, 17, 85], 'circle-color': '#ef5350', 'circle-opacity': 0.16, 'circle-stroke-color': '#ff8a80', 'circle-stroke-opacity': 0.45, 'circle-stroke-width': 1 } });
       if (!map.getSource('flood')) map.addSource('flood', { type: 'geojson', data: { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[[86.201,22.810],[86.209,22.810],[86.211,22.816],[86.204,22.819],[86.199,22.815],[86.201,22.810]]] } }] } });
       if (!map.getLayer('simulation-flood')) map.addLayer({ id: 'simulation-flood', type: 'fill', source: 'flood', paint: { 'fill-color': '#38a8ff', 'fill-opacity': 0.18, 'fill-outline-color': '#70c8ff' } });
-      locations.forEach((loc) => { const marker = new maplibregl.Marker({ color: '#d7e9f7' }).setLngLat(loc.center).setPopup(new maplibregl.Popup({ offset: 18 }).setHTML(`<b>${loc.name}</b><br/><span>${loc.type}</span>`)).addTo(map); marker.getElement().addEventListener('click', () => onSelect(loc)); });
+      locations.forEach((loc) => { const marker = new Marker({ color: '#d7e9f7' }).setLngLat(loc.center).setPopup(new Popup({ offset: 18 }).setHTML(`<b>${loc.name}</b><br/><span>${loc.type}</span>`)).addTo(map); marker.getElement().addEventListener('click', () => onSelect(loc)); });
       const carCount = 14;
-      const markers = Array.from({ length: carCount }, (_, i) => { const el = makeCarElement(i % 3 === 0 ? 1 : 0.82); return new maplibregl.Marker({ element: el, anchor: 'center', rotationAlignment: 'map' }).setLngLat(vehicleRoutes[i % vehicleRoutes.length][0]).addTo(map); });
+      const markers = Array.from({ length: carCount }, (_, i) => { const el = makeCarElement(i % 3 === 0 ? 1 : 0.82); return new Marker({ element: el, anchor: 'center', rotationAlignment: 'map' }).setLngLat(vehicleRoutes[i % vehicleRoutes.length][0]).addTo(map); });
       markersRef.current = markers;
       const animate = (now: number) => { const { traffic: tv, layers: ls } = values.current; if (ls.vehicles) markers.forEach((m, i) => { const phase = ((now * (0.000018 + tv * 0.00000012)) + i / markers.length) % 1; m.setLngLat(interpolate(vehicleRoutes[i % vehicleRoutes.length], phase)); }); animationRef.current = requestAnimationFrame(animate); };
       animationRef.current = requestAnimationFrame(animate);
