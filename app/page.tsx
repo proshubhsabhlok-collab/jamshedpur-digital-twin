@@ -49,7 +49,6 @@ function MapView({ traffic, emissions, rainfall, time, layers, selected, onSelec
       zoom: 13.65,
       pitch: 52,
       bearing: -12,
-      antialias: true,
     });
 
     mapRef.current = map;
